@@ -1,0 +1,296 @@
+/* TerminalPanel —— 右侧终端面板（同层停靠第四列卡片），M2 多标签。
+   样式全令牌化（--dsw-* / --dsh-round-side），严禁硬编码颜色。
+   上下偏移跟随 --dsh-terminal-dock-pad（rounded-panels 框架内边距实测值，
+   缺省 0px 兼容其未启用时与壳层平齐）。
+   M2：头部为标签条（标签 + × + 新建 + 面板×），body 内 .sessions 装载常驻
+   会话容器（display:none 切换），无会话时显示 .empty 空状态。 */
+
+.panel {
+  position: fixed;
+  top: var(--dsh-terminal-dock-pad, 0px);
+  right: 0;
+  bottom: var(--dsh-terminal-dock-pad, 0px);
+  min-width: 360px;
+  display: flex;
+  flex-direction: column;
+  background: var(--dsw-alias-bg-layer-1);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsh-round-side, 14px);
+  /* 不再压盖主表面：与卡片语言一致，无浮层阴影 */
+  pointer-events: auto;
+  z-index: 60;
+  overflow: hidden;
+}
+
+/* 左缘 8px 拖拽手柄 */
+.grip {
+  position: absolute;
+  left: -4px;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  z-index: 1;
+}
+
+/* ── M2 标签条（替代 M1 标题栏）── */
+.tabbar {
+  position: relative; /* 下拉锚定 */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-primary);
+  user-select: none;
+}
+
+.tabs {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--dsw-alias-scrollbar-hover-l1, transparent) transparent;
+}
+
+.tab {
+  flex: none;
+  max-width: 180px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px 2px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.tab:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.08));
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 活跃标签底色用交互型令牌（带缺省），与 ui-theme 语言一致 */
+.tabActive,
+.tabActive:hover {
+  background: var(--dsw-alias-interactive-bg-active, rgba(127, 127, 127, 0.14));
+  color: var(--dsw-alias-label-primary);
+  border-color: var(--dsw-alias-border-l1);
+}
+
+/* 已退出标签置灰 */
+.tabExited,
+.tabExited:hover {
+  color: var(--dsw-alias-label-dimmed, var(--dsw-alias-label-tertiary));
+}
+
+.tabLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tabClose {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tabClose:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.08));
+  color: var(--dsw-alias-label-primary);
+}
+
+/* ── 右侧动作区：+ 组 + 面板× ── */
+.actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.plusGroup {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.plusMain,
+.plusCaret {
+  flex: none;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.plusMain {
+  width: 24px;
+  font-size: 16px;
+}
+
+.plusCaret {
+  width: 18px;
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.plusMain:hover:not(:disabled),
+.plusCaret:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.08));
+  color: var(--dsw-alias-label-primary);
+}
+
+.plusMain:disabled,
+.plusCaret:disabled {
+  color: var(--dsw-alias-label-tertiary);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.panelClose {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.panelClose:hover {
+  background: color-mix(in srgb, var(--dsw-alias-label-primary) 8%, transparent);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* ── 终端类型下拉（caret 展开）── */
+.dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 12px;
+  z-index: 70;
+  min-width: 240px;
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-layer-3));
+  border: 1px solid var(--dsw-alias-border-l2, var(--dsw-alias-border-l1));
+  border-radius: 10px;
+}
+
+.dropdownItem {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dropdownItem:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.08));
+}
+
+.dropdownItem:disabled {
+  cursor: not-allowed;
+}
+
+.dropdownName {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.dropdownPath {
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--dsw-alias-label-tertiary);
+  word-break: break-all;
+}
+
+.dropdownEmpty {
+  padding: 8px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* ── body：常驻会话容器舞台 + 空状态 ── */
+.body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.sessions {
+  position: absolute;
+  top: 8px;
+  right: 4px;
+  bottom: 8px;
+  left: 8px;
+}
+
+/* 会话容器常驻 DOM：非活跃一律隐藏（display:none），活跃由 .sessionActive 显示。
+   M2：面板隐藏时不触碰这些类——容器随面板 display:none 整体不可见但保活。 */
+.sessionContainer {
+  position: absolute;
+  inset: 0;
+  display: none;
+}
+
+.sessionActive {
+  display: block;
+}
+
+.empty {
+  position: absolute;
+  top: 8px;
+  right: 4px;
+  bottom: 8px;
+  left: 8px;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* xterm 容器充满会话容器（fit addon 依容器尺寸算行列） */
+.body :global(.xterm) {
+  height: 100%;
+}

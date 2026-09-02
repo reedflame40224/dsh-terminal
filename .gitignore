@@ -1,0 +1,7 @@
+# 依赖与构建产物（pnpm install && pnpm bundle 可再生）
+node_modules/
+lib/
+
+# 日志与系统文件
+*.log
+.DS_Store

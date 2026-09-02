@@ -1,0 +1,55 @@
+{
+  "name": "dsh-terminal",
+  "description": "DSH Web 内嵌终端插件：右侧固定面板、单标签、WS 桥接宿主 PTY（默认 shell + p10k 字形），拖拽调宽同步 PTY resize。",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "bundle": "tsdown",
+    "watch": "tsdown --watch",
+    "test:e2e": "node test/bridge.e2e.mjs && node test/shells.e2e.mjs"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-unicode11": "^0.9.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/addon-webgl": "^0.19.0",
+    "@xterm/xterm": "^6.0.0",
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "~18.3.1",
+    "@types/react-dom": "~18.3.0",
+    "@types/ws": "^8.18.0",
+    "lightningcss": "^1.33.0",
+    "node-pty": "^1.1.0",
+    "tsdown": "^0.22.2",
+    "typescript": "^5.9.2"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "cordis.patch.yml",
+    "assets/fonts/"
+  ]
+}

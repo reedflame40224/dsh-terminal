@@ -1,0 +1,9 @@
+/* Nerd Font（p10k 字形）：由宿主半 /__dsh-terminal/assets/ 前缀路由伺服。 */
+
+@font-face {
+  font-family: 'AtkynsonMono NFM';
+  src: url('/__dsh-terminal/assets/fonts/AtkynsonMonoNerdFontMono-Regular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
