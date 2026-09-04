@@ -6,7 +6,7 @@
  * 因此桥的完整行为不依赖 dsh 进程即可验证。
  *
  * 协议（一条 WS = 一个终端会话）：
- *   C→S 文本帧 JSON：`{t:'spawn',cols,rows,cwd?,shell?}` / `{t:'resize',cols,rows}` / `{t:'kill'}`
+ *   C→S 文本帧 JSON：`{t:'spawn',cols,rows,cwd?,shell?,target?}` / `{t:'resize',cols,rows}` / `{t:'kill'}`
  *   C→S 二进制帧：终端输入原始字节（收到后 `handle.write(str)`）
  *   S→C 二进制帧：PTY 输出原始字节（`handle.output` 管道数据）
  *   S→C 文本帧 JSON：`{t:'ready',pid,shell}` / `{t:'exit',exitCode,signal}` / `{t:'error',message}`
@@ -14,6 +14,13 @@
  * 行为约束（SPEC）：
  *   - `spawn.shell`（M2，可选）：必须是 `listShells()` 返回的 path 之一
  *     （allowlist 校验，非法值只回 error 帧、不落 PTY）；缺省回落 resolveShell()；
+ *     **仅对 local target 生效**——远程 target 的 argv 完全由 resolveTarget 决定；
+ *   - `spawn.target`（M1，可选，缺省 `{kind:'local'}`=现状逐字节不变）：
+ *     `{kind:'local'} | {kind:'ssh',connectionId,cwd?} | {kind:'win',shell,cwd?}`。
+ *     非 local target 必须经注入的 `resolveTarget` 解析：无 resolver → error 帧
+ *     不落 PTY（spawned 标记仍消费，对齐 M2 非法 shell 语义）；resolver 抛错 →
+ *     error 帧；成功则用返回值替换 spawn spec 的 argv/cwd/env，
+ *     ready 帧 shell 字段用返回的 name；
  *   - spawn 前收到的二进制帧丢弃；
  *   - WS 关闭必须 terminate() PTY；
  *   - 30s ping 心跳，失活清理。
@@ -58,11 +65,30 @@ export type ResolveShell = () => ResolvedShell
 /** M2：可用 shell 列表提供者（detectShells），spawn 帧 shell 字段的 allowlist 数据源。 */
 export type ListShells = () => DetectedShell[]
 
+/** M1：spawn 帧 `target` 字段（缺省 `{kind:'local'}` = 现状逐字节不变）。 */
+export type SpawnTarget =
+  | { kind: 'local' }
+  | { kind: 'ssh'; connectionId: string; cwd?: string }
+  | { kind: 'win'; connectionId: string; shell: 'powershell' | 'cmd'; cwd?: string }
+
+/** resolveTarget 的返回：替换 spawn spec 的 argv/cwd/env，ready 帧 shell 用 name。 */
+export interface ResolvedTarget {
+  argv: string[]
+  cwd?: string
+  env?: Record<string, string>
+  name: string
+}
+
+/** M1：远程 target 解析器（dsh-ssh 提供，可选依赖）；同步或异步均可。 */
+export type ResolveTarget = (target: SpawnTarget) => ResolvedTarget | Promise<ResolvedTarget>
+
 export interface WsTerminalBridgeDeps {
   spawnTerminal: SpawnTerminal
   resolveShell: ResolveShell
   /** M2：shell allowlist（detectShells 的 path 集合），spawn 帧 shell 字段必须命中其一。 */
   listShells: ListShells
+  /** M1：远程 target 解析（非 local target 必需；缺失时只回 error 帧不落 PTY）。 */
+  resolveTarget?: ResolveTarget
   /** ping 心跳周期（默认 30_000ms）。 */
   pingIntervalMs?: number
   /** PTY TERM→KILL 清理宽限（默认 3_000ms）。 */
@@ -225,26 +251,65 @@ export class WsTerminalBridge {
     const rows = clampDimension(frame.rows, 24)
     const cwd = typeof frame.cwd === 'string' && frame.cwd.length > 0 ? frame.cwd : process.cwd()
 
-    // M2 终端类型选择：spawn.shell 必须是 listShells() 的 path 之一（allowlist）。
-    // 非法值只回 error 帧、不落 PTY（会话仍标记已消费，保持一 WS 一会话语义）；
-    // 缺省/非字符串回落 resolveShell()（M1 行为逐字节不变）。
-    let shell = this.deps.resolveShell()
-    const requested = frame.shell
-    if (typeof requested === 'string' && requested.length > 0) {
-      const matched = findAllowedShell(requested, this.deps.listShells())
-      if (matched === undefined) {
-        this.sendJson(ws, { t: 'error', message: `invalid shell: ${requested}` })
+    // ── target：spawn 目标（M1 远程扩展；缺省 = local = M1 现状逐字节不变）──
+    // local：沿用原 local shell 解析/allowlist 逻辑；非 local 走 resolveTarget——
+    //   无 resolver → error 帧不落 PTY（spawned 已消费，对齐 M2 非法 shell 语义）；
+    //   resolver 抛错 → error 帧；成功则其返回整体替换 argv/cwd/env，
+    //   ready 帧 shell 用返回 name。
+    const rawTarget: unknown = frame.target
+    const target: SpawnTarget = (rawTarget !== undefined && typeof rawTarget === 'object' && rawTarget !== null && typeof (rawTarget as { kind?: unknown }).kind === 'string'
+      ? (rawTarget as SpawnTarget)
+      : { kind: 'local' })
+
+    // 本次 spawn 实际要喂给 spawnTerminal 的 argv/cwd/env/shellName。
+    // 分支先定 argv + cwd：local 由 shell(allowlist)/cwd 决定；远程交给 resolver。
+    let argv: string[]
+    let effectiveCwd: string
+    let effectiveEnv: Record<string, string> | undefined
+    let readyShell: string
+
+    if (target.kind === 'local') {
+      // M2 shell 选择（仅 local）：spawn.shell 必须是 listShells() 的 path（allowlist）。
+      let shell = this.deps.resolveShell()
+      const requested = frame.shell
+      if (typeof requested === 'string' && requested.length > 0) {
+        const matched = findAllowedShell(requested, this.deps.listShells())
+        if (matched === undefined) {
+          this.sendJson(ws, { t: 'error', message: `invalid shell: ${requested}` })
+          return
+        }
+        shell = { argv: [matched.path], name: matched.name }
+      }
+      argv = shell.argv
+      effectiveCwd = cwd
+      readyShell = shell.name
+    } else {
+      // 非 local：远程解析（可选依赖）。
+      const resolver = this.deps.resolveTarget
+      if (resolver === undefined) {
+        this.sendJson(ws, { t: 'error', message: `no resolver for target kind: ${target.kind}` })
         return
       }
-      shell = { argv: [matched.path], name: matched.name }
+      let resolved: ResolvedTarget
+      try {
+        resolved = await resolver(target)
+      } catch (error) {
+        this.sendJson(ws, { t: 'error', message: `resolve target: ${errorMessage(error)}` })
+        return
+      }
+      argv = resolved.argv
+      readyShell = resolved.name
+      effectiveEnv = resolved.env
+      // 远程不含 cwd 时回落帧级 cwd（含 process.cwd() 缺省），与 local 语义对齐。
+      effectiveCwd = typeof resolved.cwd === 'string' && resolved.cwd.length > 0 ? resolved.cwd : cwd
     }
 
     let handle: TerminalHandle
     try {
       handle = await this.deps.spawnTerminal({
-        argv: shell.argv,
-        cwd,
-        env: { TERM: 'xterm-256color', COLORTERM: 'truecolor' },
+        argv,
+        cwd: effectiveCwd,
+        env: { ...(effectiveEnv ?? {}), TERM: 'xterm-256color', COLORTERM: 'truecolor' },
         rows,
         cols,
         graceMs: this.deps.graceMs ?? DEFAULT_GRACE_MS,
@@ -273,6 +338,6 @@ export class WsTerminalBridge {
       this.sendJson(ws, { t: 'error', message: `pty done: ${errorMessage(error)}` })
     })
 
-    this.sendJson(ws, { t: 'ready', pid: handle.pid, shell: shell.name })
+    this.sendJson(ws, { t: 'ready', pid: handle.pid, shell: readyShell })
   }
 }

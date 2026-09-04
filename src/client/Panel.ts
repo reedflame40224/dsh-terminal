@@ -91,12 +91,43 @@ async function refreshShells(): Promise<void> {
   }
 }
 
+// —— 远程目标（dsh-ssh 联动，M3）：同款 stale-while-revalidate；dsh-ssh 未挂载
+//    （404/网络错）时静默为空，远程分组整体不显示，本插件独立可用。 ——
+/** GET /__dsh-ssh/api/targets 响应条目（契约见 Plugin/dsh-ssh SPEC-M1.md G 节）。 */
+export interface RemoteTarget {
+  connectionId: string
+  title: string
+  kind: 'ssh' | 'win'
+  online: boolean
+  remotePath?: string
+}
+
+let targetsCache: RemoteTarget[] | null = null
+let targetsLoading = false
+
+/** 拉取远程目标列表并写缓存；失败保留旧缓存（从未成功则为 null=不渲染远程分组）。 */
+async function refreshTargets(): Promise<void> {
+  if (targetsLoading) return
+  targetsLoading = true
+  try {
+    const res = await fetch('/__dsh-ssh/api/targets')
+    if (!res.ok) throw new Error(`targets: HTTP ${res.status}`)
+    const data = (await res.json()) as { ok?: boolean; items?: RemoteTarget[] }
+    targetsCache = Array.isArray(data.items) ? data.items : []
+  } catch {
+    /* dsh-ssh 未挂载/离线：远程分组静默缺省 */
+  } finally {
+    targetsLoading = false
+  }
+}
+
 export function TerminalPanel({ useVisible, onClose }: TerminalPanelProps) {
   const visible = useVisible((value) => value)
   useSyncExternalStore(sessionManager.subscribe, sessionManager.getVersion)
   const [width, setWidth] = useState(() => clampWidth(window.innerWidth * DEFAULT_WIDTH_VW))
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [shellOptions, setShellOptions] = useState<ShellOption[]>(shellsCache ?? [])
+  const [remoteTargets, setRemoteTargets] = useState<RemoteTarget[]>(targetsCache ?? [])
   const sessionsRef = useRef<HTMLDivElement | null>(null)
   const dropdownRef = useRef<HTMLDivElement | null>(null)
   const plusGroupRef = useRef<HTMLDivElement | null>(null)
@@ -113,12 +144,14 @@ export function TerminalPanel({ useVisible, onClose }: TerminalPanelProps) {
     }
   }, [])
 
-  // 每次打开：刷新 shells（缓存兜底即时显示）+ 无会话则自动建默认 shell，
+  // 每次打开：刷新 shells/远程目标（缓存兜底即时显示）+ 无会话则自动建默认 shell，
   // 有则恢复活跃标签并 fit（M2 打开面板语义）。
   useEffect(() => {
     if (!visible) return
     setShellOptions(shellsCache ?? [])
     void refreshShells().then(() => setShellOptions(shellsCache ?? []))
+    setRemoteTargets(targetsCache ?? [])
+    void refreshTargets().then(() => setRemoteTargets(targetsCache ?? []))
     if (sessionManager.getCount() === 0) sessionManager.create()
     else sessionManager.refitActive()
   }, [visible])
@@ -208,6 +241,19 @@ export function TerminalPanel({ useVisible, onClose }: TerminalPanelProps) {
   const onNewDefault = (): void => { sessionManager.create() }
   const onNewShell = (option: ShellOption): void => {
     sessionManager.create({ shellPath: option.path, shellName: option.name })
+    setDropdownOpen(false)
+  }
+  // 远程目标新建（dsh-ssh 联动）：spawn 帧带 target，标签先充 ssh·<title>。
+  const onNewRemote = (target: RemoteTarget): void => {
+    sessionManager.create({
+      shellName: `${target.kind}·${target.title}`,
+      target: {
+        kind: target.kind,
+        connectionId: target.connectionId,
+        cwd: target.remotePath,
+        shell: target.kind === 'win' ? 'powershell' : undefined,
+      },
+    })
     setDropdownOpen(false)
   }
   const onCloseTab = (event: ReactMouseEvent<HTMLButtonElement>, id: number): void => {
@@ -311,6 +357,26 @@ export function TerminalPanel({ useVisible, onClose }: TerminalPanelProps) {
                     createElement('span', { className: css.dropdownPath }, option.path),
                   ),
                 ),
+            // 远程分组（dsh-ssh 联动）：有目标才渲染；离线项禁用。
+            remoteTargets.length > 0
+              ? createElement('div', { className: css.dropdownGroup, role: 'presentation' },
+                  createElement('div', { className: css.dropdownGroupTitle }, '远程'),
+                  remoteTargets.map((target) =>
+                    createElement('button', {
+                      type: 'button',
+                      key: target.connectionId,
+                      className: css.dropdownItem,
+                      role: 'menuitem',
+                      disabled: atCap || !target.online,
+                      title: atCap ? MAX_SESSIONS_TITLE : (target.online ? undefined : `${target.title}（离线）`),
+                      onClick: () => onNewRemote(target),
+                    },
+                      createElement('span', { className: css.dropdownName }, `${target.kind}·${target.title}`),
+                      createElement('span', { className: css.dropdownPath }, target.remotePath ?? ''),
+                    ),
+                  ),
+                )
+              : null,
           )
         : null,
     ),

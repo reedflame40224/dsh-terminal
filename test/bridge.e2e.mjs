@@ -11,6 +11,10 @@
  *      ready.shell='bash' → echo $BASH_VERSION 非空 → exit 0。
  *   S3 非法 shell='/no/such/shell' → 收 error 帧（invalid shell），
  *      spawnTerminal 计数不变（不落 PTY），无 ready 帧。
+ *   S4 远程 target（{kind:'ssh',connectionId,cwd}）+ 注入 resolveTarget →
+ *      argv/cwd 被 resolver 返回替换，ready.shell=resolver 的 name（`ssh·pwn`）。
+ *   S5 远程 target 但桥无 resolveTarget → 收 error 帧（no resolver），
+ *      spawnTerminal 计数不变，无 ready 帧。
  *
  * 纯 node 运行：`node test/bridge.e2e.mjs`；进程退出码 0/非 0 表成败，30s 兜底。
  */
@@ -179,6 +183,58 @@ async function scenarioInvalidShell(port) {
   ws.close()
 }
 
+/** S5：远程 target 但桥无 resolveTarget → error 帧（no resolver）、不落 PTY。 */
+async function scenarioNoResolver(port) {
+  const { ws, sink } = await openConnection(port)
+  const before = spawnCount
+  ws.send(JSON.stringify({ t: 'spawn', cols: 80, rows: 24, target: { kind: 'ssh', connectionId: 'conn_x', cwd: '/home/kali/pwn' } }))
+  await waitFor('S5 error frame', () => sink.errors.length > 0)
+  if (!/no resolver/.test(sink.errors[0].message ?? '')) fail(`S5 error message 不符: ${JSON.stringify(sink.errors[0])}`)
+  await sleep(400)
+  if (sink.ready !== undefined) fail('S5 无 resolver 竟然 ready 了（落 PTY）')
+  if (spawnCount !== before) fail(`S5 spawnTerminal 计数变化 ${before}→${spawnCount}（无 resolver 落了 PTY）`)
+  log(`S5 error frame: ${sink.errors[0].message}（未落 PTY，spawnTerminal 计数不变）`)
+  ws.close()
+}
+
+/** S4：远程 target + resolveTarget 注入 → argv/cwd 替换、ready.shell=resolver name、链路可交互。 */
+async function scenarioRemoteTarget() {
+  const seen = { targets: [] }
+  const resolveTarget = (target) => {
+    seen.targets.push(target)
+    return { argv: ['/bin/bash', '--noprofile', '--norc'], cwd: process.cwd(), name: 'ssh·pwn' }
+  }
+  const bridge = new WsTerminalBridge({ spawnTerminal, resolveShell, listShells: detectShells, resolveTarget, pingIntervalMs: 1_000 })
+  const server = http.createServer((req, res) => { res.writeHead(404); res.end() })
+  server.on('upgrade', (req, socket, head) => {
+    if (new URL(req.url ?? '/', 'http://localhost').pathname === WS_PATH) bridge.handleUpgrade(req, socket, head)
+    else socket.destroy()
+  })
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const port = server.address().port
+  try {
+    const { ws, sink } = await openConnection(port)
+    ws.send(JSON.stringify({ t: 'spawn', cols: 80, rows: 24, target: { kind: 'ssh', connectionId: 'conn_kali', cwd: '/home/kali/pwn' } }))
+    await waitFor('S4 ready frame', () => sink.ready)
+    if (seen.targets.length !== 1) fail(`S4 resolver 调用次数=${seen.targets.length}，want 1`)
+    const got = seen.targets[0]
+    if (got.kind !== 'ssh' || got.connectionId !== 'conn_kali' || got.cwd !== '/home/kali/pwn') {
+      fail(`S4 resolver 收到的 target 不符: ${JSON.stringify(got)}`)
+    }
+    if (sink.ready.shell !== 'ssh·pwn') fail(`S4 ready.shell=${sink.ready.shell}，want ssh·pwn（resolver name）`)
+    sink.output = ''
+    ws.send(Buffer.from('echo RT_ROUNDTRIP_OK\n', 'utf8'))
+    await waitFor('S4 echo roundtrip', () => sink.output.includes('RT_ROUNDTRIP_OK'))
+    ws.send(Buffer.from('exit\n', 'utf8'))
+    await waitFor('S4 exit frame', () => sink.exit)
+    log(`S4 remote target: resolver 收到 ssh/conn_kali//home/kali/pwn，ready.shell=ssh·pwn，交互回显+exit 全通`)
+    ws.close()
+  } finally {
+    bridge.dispose()
+    server.close()
+  }
+}
+
 async function main() {
   const bridge = new WsTerminalBridge({ spawnTerminal, resolveShell, listShells: detectShells, pingIntervalMs: 1_000 })
   const server = http.createServer((req, res) => { res.writeHead(404); res.end() })
@@ -193,11 +249,13 @@ async function main() {
   await scenarioDefaultShell(port)
   await scenarioBashShell(port)
   await scenarioInvalidShell(port)
+  await scenarioNoResolver(port)
 
   bridge.dispose()
   server.close()
+  await scenarioRemoteTarget() // 独立 server/bridge（注入 resolveTarget）
   clearTimeout(watchdog)
-  log('PASS: S1 默认 shell 回归 + S2 bash 显式选择 + S3 非法 shell 拒绝，全链路通过')
+  log('PASS: S1 默认 shell + S2 bash 选择 + S3 非法 shell 拒绝 + S4 远程 target 解析 + S5 无 resolver 拒绝')
   process.exit(0)
 }
 

@@ -48,6 +48,18 @@ interface SubprocessLike {
   spawnTerminal(spec: TerminalSpawnSpec): Promise<TerminalHandle>
 }
 
+/**
+ * dsh-ssh 提供的 cordis 服务最小面（契约见 Plugin/dsh-ssh SPEC-M1.md H 节）。
+ * 可选依赖：dsh-ssh 未加载时远程 target 的 spawn 只回 error 帧，本地终端不受影响。
+ */
+interface DshSshLike {
+  buildRemoteSpawn(spec: { connectionId: string; cwd?: string; shell?: string }): {
+    argv: string[]
+    name: string
+    env?: Record<string, string>
+  }
+}
+
 /** cordis Context 的最小面：本插件只用 get + effect + inject。 */
 interface HostContextLike {
   get(name: string): unknown
@@ -145,6 +157,20 @@ export function apply(ctx: HostContextLike): void {
       resolveShell,
       // M2：spawn 帧 shell 字段的 allowlist 数据源（与 /shells 路由同一来源）。
       listShells: detectShells,
+      // dsh-ssh 远程 target 联动：惰性 ctx.get（不进 inject 依赖列表）——
+      // dsh-ssh 可能后于本插件 apply，也可能根本没挂载；两种情况下本地终端
+      // 都必须照常工作，远程 target 在未加载时只回 error 帧（桥内语义）。
+      resolveTarget: (target) => {
+        const svc = ctx.get('dshSsh') as DshSshLike | undefined
+        if (svc === undefined) throw new Error('dsh-ssh 插件未加载，远程终端不可用')
+        if (target.kind === 'ssh') {
+          return svc.buildRemoteSpawn({ connectionId: target.connectionId, cwd: target.cwd })
+        }
+        if (target.kind === 'win') {
+          return svc.buildRemoteSpawn({ connectionId: target.connectionId, cwd: target.cwd, shell: target.shell })
+        }
+        throw new Error(`不支持的 target 类型: ${String((target as { kind?: unknown }).kind)}`)
+      },
     })
 
     const disposeUpgrade = webServer.registerUpgrade({

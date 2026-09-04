@@ -12,6 +12,7 @@
  */
 
 import { panelStore } from './store.ts'
+import { sessionManager } from './sessions.ts'
 import { TerminalPanel } from './Panel.ts'
 import { ToggleButton } from './ToggleButton.ts'
 import './fonts.css'
@@ -57,4 +58,27 @@ export function apply(ctx: ClientContextLike): void {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, 'dsh-terminal: ctrl+` toggle')
+
+  // dsh-ssh 联动：远程工作区行点击 → 开面板 + 建远程 target 标签。
+  // detail={connectionId, kind?, title?, remotePath?}（kind 缺省按 ssh）。
+  ctx.effect(() => {
+    const onOpenTerminal = (event: Event): void => {
+      const detail = (event as CustomEvent<{ connectionId?: string; kind?: 'ssh' | 'win'; title?: string; remotePath?: string }>).detail
+      if (detail === undefined || typeof detail.connectionId !== 'string' || detail.connectionId.length === 0) return
+      const kind = detail.kind === 'win' ? 'win' : 'ssh'
+      const title = typeof detail.title === 'string' && detail.title.length > 0 ? detail.title : detail.connectionId
+      panelStore.open()
+      sessionManager.create({
+        shellName: `${kind}·${title}`,
+        target: {
+          kind,
+          connectionId: detail.connectionId,
+          cwd: detail.remotePath,
+          shell: kind === 'win' ? 'powershell' : undefined,
+        },
+      })
+    }
+    window.addEventListener('dsh-ssh:open-terminal', onOpenTerminal)
+    return () => window.removeEventListener('dsh-ssh:open-terminal', onOpenTerminal)
+  }, 'dsh-terminal: dsh-ssh open-terminal link')
 }

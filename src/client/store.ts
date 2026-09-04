@@ -29,6 +29,12 @@ export const panelStore = {
     state.visible = !state.visible
     notify()
   },
+  /** Show the panel (dsh-ssh 远程终端联动等程序化打开入口)。 */
+  open: (): void => {
+    if (state.visible) return
+    state.visible = true
+    notify()
+  },
   /** Hide the panel (close button). */
   close: (): void => {
     if (!state.visible) return

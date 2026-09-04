@@ -251,6 +251,23 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* ── 远程目标分组（dsh-ssh 联动）── */
+.dropdownGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--dsw-alias-border-l2, var(--dsw-alias-border-l1));
+}
+
+.dropdownGroupTitle {
+  padding: 2px 8px;
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
 /* ── body：常驻会话容器舞台 + 空状态 ── */
 .body {
   flex: 1;

@@ -99,6 +99,11 @@ export interface TerminalSessionCallbacks {
  *  allowlist 内），将会随 spawn 帧上行；缺省回落宿主默认 shell（M1 行为不变）。 */
 export interface TerminalSessionOptions {
   shell?: string
+  /**
+   * 远程 target（dsh-ssh 联动，M3）：随 spawn 帧上行，宿主桥经 resolveTarget
+   * 解析为 ssh -t / powershell.exe 的本地 PTY argv。与 shell 互斥（远程忽略 shell）。
+   */
+  target?: { kind: 'ssh' | 'win'; connectionId: string; cwd?: string; shell?: 'powershell' | 'cmd' }
 }
 
 export interface TerminalSession {
@@ -146,6 +151,7 @@ export function createTerminalSession(
   let exited = false // 收到 exit 帧后置位：WS 关闭通知不再重复刷「连接已断开」（M2 标签保留内容）
   let ws: WebSocket | null = null
   const requestedShell = options?.shell // M2：可选 shell（缺省回落默认）
+  const requestedTarget = options?.target // M3：可选远程 target（dsh-ssh 联动）
 
   // —— PTY resize 发送（本版：方向感知调度 + 全局静默期同步）——
   //   尺寸同步分两半：
@@ -465,6 +471,7 @@ export function createTerminalSession(
       lastSent = size // spawn 携带的尺寸即基准：ready 时相同则不再补发
       const frame: Record<string, unknown> = { t: 'spawn', cols: size.cols, rows: size.rows }
       if (requestedShell !== undefined && requestedShell.length > 0) frame.shell = requestedShell
+      if (requestedTarget !== undefined) frame.target = requestedTarget
       ws?.send(JSON.stringify(frame))
     })
     ws.addEventListener('message', (event) => {

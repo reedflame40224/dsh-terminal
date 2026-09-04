@@ -42,6 +42,8 @@ export interface CreateSessionOptions {
   shellPath?: string
   /** 请求的 shell 名（下拉项给出），ready 前先充作标签文案。 */
   shellName?: string
+  /** 远程 target（dsh-ssh 联动）：spawn 帧带 target，与 shellPath 互斥。 */
+  target?: { kind: 'ssh' | 'win'; connectionId: string; cwd?: string; shell?: 'powershell' | 'cmd' }
 }
 
 interface SessionRecord {
@@ -57,6 +59,8 @@ let nextId = 1
 let activeId: number | null = null
 /** .sessions 容器宿主（面板 body 内，常驻；面板隐藏不卸载）。 */
 let host: HTMLElement | null = null
+/** host 未就绪时暂存的最近一次新建请求（setHost 时 flush；联动事件先于面板首挂载的场景）。 */
+let pendingCreate: CreateSessionOptions | undefined
 /** 变更版本号：任何增删/激活/退出/改名都 +1，驱动 useSyncExternalStore 重渲染。 */
 let version = 0
 const listeners = new Set<() => void>()
@@ -68,6 +72,12 @@ function notify(): void {
 
 function setHost(element: HTMLElement | null): void {
   host = element
+  // flush 暂存的新建请求（面板首次挂载晚于 dsh-ssh 联动事件的时序兜底）。
+  if (host !== null && pendingCreate !== undefined) {
+    const options = pendingCreate
+    pendingCreate = undefined
+    create(options)
+  }
 }
 
 function subscribe(listener: () => void): () => void {
@@ -96,9 +106,14 @@ function getActiveSession(): TerminalSession | null {
   return record?.session ?? null
 }
 
-/** 新建会话：容器入常驻 DOM → createTerminalSession（带可选 shell）→ 激活新标签。 */
+/** 新建会话：容器入常驻 DOM → createTerminalSession（带可选 shell/target）→ 激活新标签。 */
 function create(options?: CreateSessionOptions): number | null {
-  if (records.size >= MAX_SESSIONS || host === null) return null
+  if (records.size >= MAX_SESSIONS) return null
+  if (host === null) {
+    // 面板尚未首挂载：暂存请求，setHost 时 flush（只留最近一次）。
+    pendingCreate = options ?? {}
+    return null
+  }
   const id = nextId++
   const container = document.createElement('div')
   container.className = css.sessionContainer
@@ -116,7 +131,7 @@ function create(options?: CreateSessionOptions): number | null {
       record.exited = true
       notify()
     },
-  }, { shell: options?.shellPath })
+  }, { shell: options?.shellPath, target: options?.target })
   records.set(id, { id, session, container, label: options?.shellName ?? '连接中…', exited: false })
   activate(id) // 内部 notify
   return id
