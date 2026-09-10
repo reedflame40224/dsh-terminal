@@ -54,6 +54,11 @@ function shellFromPasswd(): string | undefined {
 
 /** 解析当前环境默认 shell。 */
 export function resolveShell(): ResolvedShell {
+  if (process.platform === 'win32') {
+    const shell = findInPath('pwsh') ?? findInPath('powershell') ?? process.env.ComSpec ?? findInPath('cmd');
+    if (!shell) throw new Error('No Windows shell found on PATH');
+    return { argv: [shell], name: basename(shell) }
+  }
   const fromEnv = process.env.SHELL
   const shell = (fromEnv !== undefined && fromEnv.length > 0 ? fromEnv : undefined) ?? shellFromPasswd() ?? '/bin/sh'
   return { argv: [shell], name: basename(shell) }
@@ -78,8 +83,11 @@ function findInPath(bin: string): string | undefined {
   const entries = (process.env.PATH ?? '').split(pathListDelimiter())
   for (const dir of entries) {
     if (dir.length === 0) continue
-    const candidate = resolvePath(dir, bin)
-    if (existsSync(candidate)) return candidate
+    const suffixes = process.platform === 'win32' && !/\.[a-z0-9]+$/i.test(bin) ? ['.exe', ''] : ['']
+    for (const suffix of suffixes) {
+      const candidate = resolvePath(dir.replace(/^"|"$/g, ''), bin + suffix)
+      if (existsSync(candidate)) return candidate
+    }
   }
   return undefined
 }

@@ -43,6 +43,8 @@ pnpm test
 
 ## 拉伸换行修复
 
+Windows 原生安装可使用 [dsh-ssh 的 profile 安装脚本](https://github.com/reedflame40224/dsh-ssh#Windows-原生安装实验) 联合安装。Windows 默认检测 PowerShell、pwsh 和 cmd，不再回退到不存在的 `/bin/sh`；旧宿主的内部 PTY resize 方法也会被转发。仍需 Node.js 24、可用的宿主 PTY 和 dsh-std 适配器。
+
 当前实现冻结拖拽过程中的中间尺寸，并合并最终调整：
 
 - 拉宽时，先调整 xterm，再同步 PTY。
@@ -58,7 +60,7 @@ pnpm test
 | 命令 | 用途 |
 | --- | --- |
 | `pnpm bundle` | 构建当前兼容版浏览器入口 |
-| `pnpm test` | 运行 7 项兼容层生命周期与尺寸同步测试 |
+| `pnpm test` | 运行兼容层生命周期、Shell 检测与尺寸同步测试 |
 | `pnpm bundle:legacy` | 仅构建原插件，不更新默认兼容入口 |
 | `pnpm run watch` | 监听原源码并增量构建；兼容转换仍需另行执行 |
 | `pnpm run test:e2e` | 运行保留的原插件测试 |

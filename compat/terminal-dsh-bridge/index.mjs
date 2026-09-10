@@ -15,7 +15,7 @@ export function terminalSpec(spec) {
 
 // alpha.2 has no resize method. Linux stty applies TIOCSWINSZ to the existing PTY.
 export async function resizable(handle) {
-  if (typeof handle.resize === 'function' || process.platform !== 'linux') return handle;
+  if (typeof handle.resize === 'function') return handle;
   let exited = false;
   handle.done.then(() => { exited = true; }, () => { exited = true; });
   if (typeof handle.terminal?.resize === 'function') {
@@ -28,6 +28,7 @@ export async function resizable(handle) {
       },
     };
   }
+  if (process.platform !== 'linux') return handle;
   const statPath = `/proc/${handle.pid}/stat`;
   const identity = text => text.slice(text.lastIndexOf(')') + 2).split(' ')[19];
   let start;
