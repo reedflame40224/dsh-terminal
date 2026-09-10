@@ -1,0 +1,8 @@
+{
+  "name": "@local/dsh-terminal-std",
+  "version": "0.1.0-lab.1",
+  "type": "module",
+  "main": "host.mjs",
+  "license": "MIT",
+  "dependencies": { "ws": "8.21.3" }
+}

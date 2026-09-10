@@ -1,0 +1,9 @@
+{
+  "name": "dsh-terminal",
+  "version": "0.1.0-std-bridge.1",
+  "type": "module",
+  "main": "index.mjs",
+  "exports": { ".": "./index.mjs", "./client": "./lib/client.js", "./package.json": "./package.json" },
+  "license": "MIT",
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" }, "client": { "platform": "web" } }
+}

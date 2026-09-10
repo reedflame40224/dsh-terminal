@@ -5,3 +5,9 @@ lib/
 # 日志与系统文件
 *.log
 .DS_Store
+
+# Keep the verified browser entry usable from a source checkout.
+!compat/terminal-dsh-bridge/lib/
+!compat/terminal-dsh-bridge/lib/*.js
+compat/**/*.map
+*.log

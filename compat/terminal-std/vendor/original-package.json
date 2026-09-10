@@ -4,26 +4,28 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "compat/terminal-dsh-bridge/index.mjs",
+  "main": "lib/index.js",
   "exports": {
-    ".": "./compat/terminal-dsh-bridge/index.mjs",
-    "./client": "./compat/terminal-dsh-bridge/lib/client.js",
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
     "./package.json": "./package.json"
   },
   "dsh": {
     "bundle": {
-      "patch": "./compat/terminal-dsh-bridge/cordis.patch.yml"
+      "patch": "./cordis.patch.yml"
     },
     "client": {
       "platform": "web"
     }
   },
   "scripts": {
-    "bundle": "tsdown && node scripts/build-compat-client.mjs",
+    "bundle": "tsdown",
     "watch": "tsdown --watch",
-    "test:e2e": "node test/bridge.e2e.mjs && node test/shells.e2e.mjs",
-    "bundle:legacy": "tsdown",
-    "test": "node scripts/test-compat.mjs"
+    "test:e2e": "node test/bridge.e2e.mjs && node test/shells.e2e.mjs"
   },
   "license": "MIT",
   "dependencies": {
@@ -42,27 +44,12 @@
     "lightningcss": "^1.33.0",
     "node-pty": "^1.1.0",
     "tsdown": "^0.22.2",
-    "typescript": "^5.9.2",
-    "@dsh-std/ui": "0.1.1-rc.1"
+    "typescript": "^5.9.2"
   },
   "files": [
-    "compat/",
-    "assets/",
-    "LICENSE"
-  ],
-  "engines": {
-    "node": ">=24.0.0"
-  },
-  "peerDependencies": {
-    "@dsh-std/adapter-dsh": "0.1.1-rc.2"
-  },
-  "peerDependenciesMeta": {
-    "@dsh-std/adapter-dsh": {
-      "optional": true
-    }
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/reedflame40224/dsh-terminal.git"
-  }
+    "lib/index.js",
+    "lib/client.js",
+    "cordis.patch.yml",
+    "assets/fonts/"
+  ]
 }
